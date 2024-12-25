@@ -3,8 +3,10 @@
 import json
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import numpy as np
 
 
 class MessageReader(ABC):
@@ -28,28 +30,145 @@ class DiscordMessageReader(MessageReader):
 
 
 @dataclass
-class Tokenizer:
-    """Tokenizer.
+class MessageProcessor:
+    """Processes a string message."""
+
+    def process(self, message: str):
+        """Process message."""
+        message = re.sub(r"[^\w\d\s\?\!\"\':<>]", r"", message)
+        message = re.sub(r"(\?|\!|;|~~)", r" \1", message)
+        words = re.split(r"\s+|,|\.|;", message)
+        words = ["<start>"] + words + ["<end>"]
+        words = [
+            c
+            for c in words
+            if c is not None and not c.startswith("https") and len(c) > 0
+        ]
+
+        words = [
+            word if (word.upper() == word or "<" in word) else word.lower()
+            for word in words
+        ]
+        return words
+
+
+@dataclass
+class MarkovChain:
+    """Markov Chain.
 
     Tokenizes vocabulary and forms mappings.
     """
 
-    vocabulary_dir_path: Path
-    message_reader: MessageReader
-    _word_to_token: dict[str, str] = None
-    _token_to_word: dict[str, str] = None
+    message_reader: MessageReader = field(default_factory=DiscordMessageReader)
+    message_processor: MessageProcessor = field(
+        default_factory=MessageProcessor
+    )
+    _word_to_token: dict[str, str] = field(default_factory=dict)
+    _token_to_word: dict[str, str] = field(default_factory=dict)
+    _vocabulary: set[int] = field(default_factory=set)
+    _unigram_chain: dict[int, dict[int, int]] = field(default_factory=dict)
+    _bigram_chain: dict[tuple[int, int], dict[int, int]] = field(
+        default_factory=dict
+    )
+    _current_token_id: int = 0
+    _rng: np.random.Generator = field(default_factory=np.random.default_rng)
 
-    def tokenize(self):
+    def add_vocabulary(self, vocabulary_dir_path: Path):
         """Tokenizer."""
-        # current_token_id = 0
-
-        for filepath in self.vocabulary_dir_path.iterdir():
+        for filepath in vocabulary_dir_path.iterdir():
             messages = self.message_reader.get_messages(filepath)
 
             for message in messages:
-                print(message)
-                message = re.sub(r"(\?|\!|;|~~)", r" \1", message)
-                words = re.split(r"\s+|,|\.|;", message)
-                words = [c for c in words if c is not None]
-                print(words)
-                input()
+                words = self.message_processor.process(message)
+                for word in words:
+                    self.add_as_token(word)
+                self.add_to_chain(words)
+        self.sort_chains()
+
+    def add_to_chain(self, words):
+        """Build chains."""
+        for i in range(len(words) - 1):
+            current_token = self._word_to_token[words[i]]
+            next_token = self._word_to_token[words[i + 1]]
+
+            if current_token not in self._unigram_chain:
+                self._unigram_chain[current_token] = {}
+            self._unigram_chain[current_token][next_token] = (
+                self._unigram_chain[current_token].get(next_token, 0) + 1
+            )
+
+            if i <= len(words) - 3:
+                next_next_token = self._word_to_token[words[i + 2]]
+                if (current_token, next_token) not in self._bigram_chain:
+                    self._bigram_chain[(current_token, next_token)] = {}
+                self._bigram_chain[(current_token, next_token)][
+                    next_next_token
+                ] = (
+                    self._bigram_chain[(current_token, next_token)].get(
+                        next_next_token, 0
+                    )
+                    + 1
+                )
+
+    def sort_chains(self):
+        """Reverse order sort chains."""
+        self._unigram_chain = {
+            k: {kk: v[kk] for kk in sorted(v, key=v.get, reverse=True)}
+            for k, v in self._unigram_chain.items()
+        }
+        self._bigram_chain = {
+            k: {kk: v[kk] for kk in sorted(v, key=v.get, reverse=True)}
+            for k, v in self._bigram_chain.items()
+        }
+
+    def predict_next_token(self, *, prev_token, prev_prev_token=None):
+        """Predict based on previous tokens."""
+        # 1 gram case
+        if prev_prev_token is None:
+            if prev_token not in self._unigram_chain:
+                # return random.choice(tuple(self._vocabulary))
+                return self._rng.choice(tuple(self._vocabulary))
+
+            to_pick = self._unigram_chain[prev_token]
+            return self.pick_randomly_from_dict(to_pick)
+        else:
+            if (prev_prev_token, prev_token) not in self._bigram_chain:
+                return self.predict_next_token(
+                    prev_token=prev_token, prev_prev_token=None
+                )
+
+            to_pick = self._bigram_chain[(prev_prev_token, prev_token)]
+            print(to_pick)
+            return self.pick_randomly_from_dict(to_pick)
+
+    def pick_randomly_from_dict(self, to_pick: dict[int, int]):
+        """Generate random number, pick when cumulative/total > random."""
+        total_count = sum(to_pick.values())
+        random_number = self._rng.random() * total_count
+        cumulative = 0
+        for token, value in to_pick.items():
+            cumulative += value
+            if cumulative >= random_number:
+                return token
+
+    def tokenize_sentence(self, sentence):
+        """Single sentence."""
+        words = self.message_processor.process(sentence)
+        return [self._word_to_token[w] for w in words]
+
+    def untokenize_list(self, tokens):
+        """Single sentence."""
+        return [self._token_to_word[t] for t in tokens]
+
+    def add_as_token(self, word):
+        """Add word and token_id++."""
+        if word not in self._word_to_token:
+            self._word_to_token[word] = self._current_token_id
+            self._token_to_word[self._current_token_id] = word
+            self._vocabulary.add(self._current_token_id)
+            self._current_token_id += 1
+
+    def continue_sentence(sentence: str):
+        """Continue sentence."""
+        # words = MessageProcessor
+        pass
