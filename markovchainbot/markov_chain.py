@@ -149,10 +149,23 @@ class MarkovChain:
             prev_token = tokens[-2]
             current_token = tokens[-1]
 
+        probability_randomize = 0.03
         while current_token != self._word_to_token["<end>"]:
-            prev_token, current_token = current_token, self.predict_next_token(
-                prev_token=current_token, prev_prev_token=prev_token
-            )
+            coin_flip = self._rng.random()
+            if coin_flip < probability_randomize:
+                prev_token, current_token = (
+                    current_token,
+                    self.get_random_token(),
+                )
+                probability_randomize = 0.03
+            else:
+                prev_token, current_token = (
+                    current_token,
+                    self.predict_next_token(
+                        prev_token=current_token, prev_prev_token=prev_token
+                    ),
+                )
+            probability_randomize += self._rng.random() * 0.03
             continued.append(self._token_to_word[current_token])
             if len(continued) > 200:
                 break
