@@ -1,55 +1,15 @@
-"""Vocabulary builder."""
+"""Markov chain."""
 
-import json
-import re
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
 
-
-class MessageReader(ABC):
-    """Abstract message reader."""
-
-    @abstractmethod
-    def get_messages(self, filepath: Path):
-        """Get messages from a file."""
-        pass
-
-
-@dataclass
-class DiscordMessageReader(MessageReader):
-    """Message reader, discord format."""
-
-    def get_messages(self, filepath: Path):
-        with open(filepath, "r") as file:
-            messages: dict[str, dict[str, int | str]] = json.load(file)
-
-        return [c["content"] for c in messages.values()]
-
-
-@dataclass
-class MessageProcessor:
-    """Processes a string message."""
-
-    def process(self, message: str):
-        """Process message."""
-        message = re.sub(r"[^\w\d\s\?\!\"\':<>]", r"", message)
-        message = re.sub(r"(\?|\!|;|~~)", r" \1", message)
-        words = re.split(r"\s+|,|\.|;", message)
-        words = ["<start>"] + words + ["<end>"]
-        words = [
-            c
-            for c in words
-            if c is not None and not c.startswith("https") and len(c) > 0
-        ]
-
-        words = [
-            word if (word.upper() == word or "<" in word) else word.lower()
-            for word in words
-        ]
-        return words
+from markovchainbot.utils import (
+    DiscordMessageReader,
+    MessageProcessor,
+    MessageReader,
+)
 
 
 @dataclass
@@ -138,7 +98,6 @@ class MarkovChain:
                 )
 
             to_pick = self._bigram_chain[(prev_prev_token, prev_token)]
-            print(to_pick)
             return self.pick_randomly_from_dict(to_pick)
 
     def pick_randomly_from_dict(self, to_pick: dict[int, int]):
@@ -168,7 +127,23 @@ class MarkovChain:
             self._vocabulary.add(self._current_token_id)
             self._current_token_id += 1
 
-    def continue_sentence(sentence: str):
+    def continue_sentence(self, sentence: str):
         """Continue sentence."""
-        # words = MessageProcessor
-        pass
+        words = self.message_processor.process(sentence)[:-1]
+        tokens = [self._word_to_token[w] for w in words]
+        continued = []
+        if len(tokens) == 1:
+            prev_token = None
+            current_token = tokens[0]
+        else:
+            prev_token = tokens[-2]
+            current_token = tokens[-1]
+
+        while current_token != self._word_to_token["<end>"]:
+            prev_token, current_token = current_token, self.predict_next_token(
+                prev_token=current_token, prev_prev_token=prev_token
+            )
+            continued.append(self._token_to_word[current_token])
+            if len(continued) > 200:
+                break
+        return " ".join(continued[:-1])
