@@ -81,13 +81,17 @@ class MarkovChain:
             for k, v in self._bigram_chain.items()
         }
 
+    def get_random_token(self):
+        """Get a random token from vocabulary."""
+        return self._rng.choice(tuple(self._vocabulary))
+
     def predict_next_token(self, *, prev_token, prev_prev_token=None):
         """Predict based on previous tokens."""
         # 1 gram case
         if prev_prev_token is None:
             if prev_token not in self._unigram_chain:
                 # return random.choice(tuple(self._vocabulary))
-                return self._rng.choice(tuple(self._vocabulary))
+                return self.get_random_token()
 
             to_pick = self._unigram_chain[prev_token]
             return self.pick_randomly_from_dict(to_pick)
@@ -130,7 +134,13 @@ class MarkovChain:
     def continue_sentence(self, sentence: str):
         """Continue sentence."""
         words = self.message_processor.process(sentence)[:-1]
-        tokens = [self._word_to_token[w] for w in words]
+        tokens = []
+        for w in words:
+            if w not in self._word_to_token:
+                tokens.append(self.get_random_token())
+            else:
+                tokens.append(self._word_to_token[w])
+
         continued = []
         if len(tokens) == 1:
             prev_token = None
