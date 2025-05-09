@@ -21,7 +21,8 @@ class DiscordMessageReader(MessageReader):
     """Message reader, discord format."""
 
     def get_messages(self, filepath: Path):
-        with open(filepath, "r") as file:
+        """Get discord messages contained in a json."""
+        with open(filepath) as file:
             messages: dict[str, dict[str, int | str]] = json.load(file)
 
         return [c["content"] for c in messages.values()]
