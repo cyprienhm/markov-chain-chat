@@ -33,16 +33,24 @@ class MarkovChain:
     _current_token_id: int = 0
     _rng: np.random.Generator = field(default_factory=np.random.default_rng)
 
-    def add_vocabulary(self, vocabulary_dir_path: Path):
-        """Tokenizer."""
-        for filepath in vocabulary_dir_path.iterdir():
-            messages = self.message_reader.get_messages(filepath)
+    def add_messages_to_vocabulary(self, messages: list[str]):
+        """Add list of messages to vocabulary."""
+        for message in messages:
+            words = self.message_processor.process(message)
+            for word in words:
+                self.add_as_token(word)
+            self.add_to_chain(words)
+        self.sort_chains()
 
-            for message in messages:
-                words = self.message_processor.process(message)
-                for word in words:
-                    self.add_as_token(word)
-                self.add_to_chain(words)
+    def add_file_to_vocabulary(self, filepath: Path):
+        """Add file to vocabulary."""
+        messages = self.message_reader.get_messages(filepath)
+
+        for message in messages:
+            words = self.message_processor.process(message)
+            for word in words:
+                self.add_as_token(word)
+            self.add_to_chain(words)
         self.sort_chains()
 
     def add_to_chain(self, words):
