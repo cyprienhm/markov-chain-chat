@@ -11,7 +11,7 @@ class MessageReader(ABC):
     """Abstract message reader."""
 
     @abstractmethod
-    def get_messages(self, filepath: Path):
+    def get_messages(self, filepath: Path) -> list[str]:
         """Get messages from a file."""
         pass
 
@@ -20,12 +20,24 @@ class MessageReader(ABC):
 class DiscordMessageReader(MessageReader):
     """Message reader, discord format."""
 
-    def get_messages(self, filepath: Path):
+    def get_messages(self, filepath: Path) -> list[str]:
         """Get discord messages contained in a json."""
         with open(filepath) as file:
             messages: dict[str, dict[str, int | str]] = json.load(file)
 
-        return [c["content"] for c in messages.values()]
+        return [str(c["content"]) for c in messages.values()]
+
+
+@dataclass
+class DiscordPackageMessageReader(MessageReader):
+    """Message reader, discord format."""
+
+    def get_messages(self, filepath: Path) -> list[str]:
+        """Get discord messages contained in a json."""
+        with open(filepath) as file:
+            messages: list[dict[str, int | str]] = json.load(file)
+
+        return [str(c["Contents"]) for c in messages]
 
 
 @dataclass
