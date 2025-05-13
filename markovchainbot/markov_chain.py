@@ -9,6 +9,7 @@ from markovchainbot.utils import (
     DiscordMessageReader,
     MessageProcessor,
     MessageReader,
+    levenshtein_distance,
 )
 
 
@@ -23,9 +24,9 @@ class MarkovChain:
     message_processor: MessageProcessor = field(
         default_factory=MessageProcessor
     )
-    _word_to_token: dict[str, str] = field(default_factory=dict)
-    _token_to_word: dict[str, str] = field(default_factory=dict)
-    _vocabulary: set[int] = field(default_factory=set)
+    _word_to_token: dict[str, int] = field(default_factory=dict)
+    _token_to_word: dict[int, str] = field(default_factory=dict)
+    _vocabulary_tokens_ids: set[int] = field(default_factory=set)
     _unigram_chain: dict[int, dict[int, int]] = field(default_factory=dict)
     _bigram_chain: dict[tuple[int, int], dict[int, int]] = field(
         default_factory=dict
@@ -91,9 +92,9 @@ class MarkovChain:
 
     def get_random_token(self):
         """Get a random token from vocabulary."""
-        return self._rng.choice(tuple(self._vocabulary))
+        return self._rng.choice(tuple(self._vocabulary_tokens_ids))
 
-    def predict_next_token(self, *, prev_token, prev_prev_token=None):
+    def predict_next_token(self, *, prev_token, prev_prev_token=None) -> int:
         """Predict based on previous tokens."""
         # 1 gram case
         if prev_prev_token is None:
@@ -112,7 +113,7 @@ class MarkovChain:
             to_pick = self._bigram_chain[(prev_prev_token, prev_token)]
             return self.pick_randomly_from_dict(to_pick)
 
-    def pick_randomly_from_dict(self, to_pick: dict[int, int]):
+    def pick_randomly_from_dict(self, to_pick: dict[int, int]) -> int:
         """Generate random number, pick when cumulative/total > random."""
         total_count = sum(to_pick.values())
         random_number = self._rng.random() * total_count
@@ -121,6 +122,7 @@ class MarkovChain:
             cumulative += value
             if cumulative >= random_number:
                 return token
+        return next(iter(to_pick))
 
     def tokenize_sentence(self, sentence):
         """Single sentence."""
@@ -136,7 +138,7 @@ class MarkovChain:
         if word not in self._word_to_token:
             self._word_to_token[word] = self._current_token_id
             self._token_to_word[self._current_token_id] = word
-            self._vocabulary.add(self._current_token_id)
+            self._vocabulary_tokens_ids.add(self._current_token_id)
             self._current_token_id += 1
 
     def continue_sentence(self, sentence: str):
@@ -145,7 +147,14 @@ class MarkovChain:
         tokens = []
         for w in words:
             if w not in self._word_to_token:
-                tokens.append(self.get_random_token())
+                tokens.append(
+                    self._word_to_token[
+                        min(
+                            self._word_to_token,
+                            key=lambda x: levenshtein_distance(w, x),
+                        )
+                    ]
+                )
             else:
                 tokens.append(self._word_to_token[w])
 
@@ -158,7 +167,7 @@ class MarkovChain:
             current_token = tokens[-1]
 
         probability_randomize = 0.03
-        while current_token != self._word_to_token["<end>"]:
+        while len(continued) < 200:
             coin_flip = self._rng.random()
             if coin_flip < probability_randomize:
                 prev_token, current_token = (
@@ -174,7 +183,11 @@ class MarkovChain:
                     ),
                 )
             probability_randomize += self._rng.random() * 0.03
+            if current_token == self._word_to_token["<end>"]:
+                if len(continued) < 3 and self._rng.random() < 0.5:
+                    continue
+                else:
+                    continued.append(self._token_to_word[current_token])
+                    break
             continued.append(self._token_to_word[current_token])
-            if len(continued) > 200:
-                break
         return " ".join(continued[:-1])
