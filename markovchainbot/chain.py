@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import numpy as np
 
@@ -169,3 +170,16 @@ class MarkovChain:
             generated_words.append(self._token_to_word[next_token])
 
         return " ".join(generated_words)
+
+    def save(self, filepath: str | Path) -> None:
+        """Save the trained model to JSON."""
+        from markovchainbot.serialization import save
+
+        save(self, Path(filepath))
+
+    @classmethod
+    def load(cls, filepath: str | Path) -> MarkovChain:
+        """Load a trained model from JSON."""
+        from markovchainbot.serialization import load
+
+        return load(Path(filepath))
