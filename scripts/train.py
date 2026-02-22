@@ -35,5 +35,5 @@ v1.add_messages(read_discord_package_messages(parent / "dump.json"))
 v2 = MarkovChain()
 v2.add_messages(all_messages)
 
-save(v1, Path(parent / "v1.json"))
-save(v2, Path(parent / "v2.json"))
+save(v1, Path(parent / "v1.msgpack"))
+save(v2, Path(parent / "v2.msgpack"))
